@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Human vs Robot Detector</title>
+  <style>
+    :root{--bg:#0b1220;--card:#121a2b;--text:#e8eef9;--muted:#a9b4c8;--accent:#6ee7b7;--warn:#f59e0b;--bad:#ef4444}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; background:linear-gradient(180deg,#0b1220,#0e1322 35%,#0b1220); color:var(--text)}
+    .wrap{max-width:900px;margin:40px auto;padding:16px}
+    .card{background:var(--card);border:1px solid #1f2a44;border-radius:18px;box-shadow:0 10px 25px rgba(0,0,0,.35);padding:20px}
+    h1{margin:0 0 12px;font-weight:800;letter-spacing:.2px}
+    .sub{color:var(--muted);margin:0 0 22px}
+    .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+    .panel{background:#0f1627;border:1px solid #1d2743;border-radius:14px;padding:14px}
+    .k{color:#7ea1ff}
+    .btn{appearance:none;border:0;border-radius:14px;padding:12px 16px;font-weight:700;background:var(--accent);color:#072616;cursor:pointer;transition:.15s transform,.2s box-shadow}
+    .btn:active{transform:translateY(1px)}
+    .mutebtn{background:#213050;color:#c7d2fe}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    code,pre{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9rem}
+    .bar{height:12px;background:#1f2a44;border-radius:10px;overflow:hidden}
+    .bar>span{display:block;height:100%;background:linear-gradient(90deg,#34d399,#10b981);width:0}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#1a2440;color:#bcd2ff;border:1px solid #22315a}
+    .scoreTag{font-weight:800}
+    .danger{color:var(--bad)}
+    .warn{color:var(--warn)}
+    .ok{color:var(--accent)}
+    .foot{color:#8ea0bf;font-size:.9rem;margin-top:18px}
+    .tiny{font-size:.85rem;color:#9fb0cc}
+    .hidden{position:absolute!important;left:-9999px!important;opacity:0!important;pointer-events:none!important}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Human vs Robot Detector</h1>
+      <p class="sub">Lightweight, no backend. Uses behaviour signals (mouse, keys, timing, entropy, platform hints) to score likelihood. <strong>Not bullet‑proof</strong>, but good enough for simple forms/links. For strong protection, pair with Turnstile/hCaptcha + server verification.</p>
+
+      <div class="grid" id="top">
+        <div class="panel">
+          <div class="row">
+            <button id="startBtn" class="btn">Start tracking</button>
+            <button id="stopBtn" class="btn mutebtn">Stop</button>
+            <span id="status" class="pill">status: idle</span>
+          </div>
+          <div style="height:10px"></div>
+          <div class="bar"><span id="progress"></span></div>
+          <div class="tiny">Move your mouse, scroll, and type a little. Then do the hold‑button micro‑challenge below.</div>
+        </div>
+        <div class="panel">
+          <div class="row"><span class="pill">Mouse entropy: <span id="mouseEntropy" class="scoreTag">0</span></span><span class="pill">Keystroke variance: <span id="keyVar" class="scoreTag">0</span></span><span class="pill">Platform flags: <span id="pfScore" class="scoreTag">0</span></span></div>
+          <div style="height:6px"></div>
+          <div class="row"><span class="pill">Paste ratio: <span id="pasteRatio" class="scoreTag">0%</span></span><span class="pill">Idle gaps: <span id="idleGaps" class="scoreTag">0</span></span></div>
+        </div>
+      </div>
+
+      <div style="height:16px"></div>
+
+      <div class="grid">
+        <div class="panel">
+          <h3>1) Micro‑challenge: Press & Hold</h3>
+          <p id="challengeText" class="tiny">Press and hold the button for <span id="targetSec">…</span> seconds, then release.</p>
+          <button id="holdBtn" class="btn mutebtn">Press & hold</button>
+          <div style="height:8px"></div>
+          <div>Hold result: <span id="holdResult">—</span></div>
+        </div>
+        <div class="panel">
+          <h3>2) Quick form (honeypot + paste)</h3>
+          <form id="demoForm">
+            <label>Name<br />
+              <input id="name" autocomplete="name" placeholder="Type your name" style="width:100%;padding:10px;border-radius:10px;border:1px solid #23335e;background:#0b1426;color:#e6eeff" />
+            </label>
+            <div style="height:8px"></div>
+            <label>Comment<br />
+              <textarea id="comment" placeholder="Type a short message (don’t paste)" style="width:100%;min-height:80px;padding:10px;border-radius:10px;border:1px solid #23335e;background:#0b1426;color:#e6eeff"></textarea>
+            </label>
+            <!-- Honeypot: bots often fill hidden fields -->
+            <input type="text" id="hp_" class="hidden" name="company" autocomplete="organization" />
+            <div style="height:8px"></div>
+            <button class="btn" type="submit">Submit (demo)</button>
+          </form>
+          <div class="tiny">If the hidden field is filled or paste‑heavy input is detected, score is reduced.</div>
+        </div>
+      </div>
+
+      <div style="height:16px"></div>
+
+      <div class="panel">
+        <h3>Decision</h3>
+        <p>Likelihood of <strong>human</strong> interaction:</p>
+        <div class="bar"><span id="finalBar"></span></div>
+        <p id="finalText" class="foot">—</p>
+        <div class="row">
+          <button id="calcBtn" class="btn">Calculate now</button>
+          <button id="resetBtn" class="btn mutebtn">Reset</button>
+          <button id="exportBtn" class="btn mutebtn">Export evidence JSON</button>
+        </div>
+      </div>
+
+      <p class="foot">Open‑source, client‑only demo. Signals used: movement entropy, speed variance, direction changes, keystroke interval variance, paste ratio, idle gaps, platform flags (webdriver/headless/plugins), WebGL renderer, precision timing from hold task, honeypot.
+      </p>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+  const mean=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:0;
+  const variance=arr=>{const m=mean(arr);return arr.length?arr.reduce((a,b)=>a+(b-m)*(b-m),0)/arr.length:0};
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const angle=(a,b)=>Math.atan2(b.y-a.y,b.x-a.x);
+
+  const state={
+    tracking:false,
+    startedAt:0,
+    mouse:{
+      moves:0,
+      last:null,
+      totalDist:0,
+      angles:[],
+      speeds:[],
+      tinyJitters:0,
+      idleGaps:[],
+      lastTs:0,
+    },
+    keys:{times:[], last:0, total:0, pasted:0},
+    hold:{target:0, downAt:0, errorMs:null},
+    form:{honeypot:false, pasteRatio:0},
+    platform:{
+      webdriver: !!navigator.webdriver,
+      plugins: navigator.plugins? navigator.plugins.length: 0,
+      languages: navigator.languages? navigator.languages.length: 0,
+      hardware: navigator.hardwareConcurrency || 0,
+      memory: navigator.deviceMemory || 0,
+      userAgent: navigator.userAgent,
+      webglRenderer: null,
+    }
+  };
+
+  // WebGL renderer hint (SwiftShader/headless hints)
+  try{
+    const canvas=document.createElement('canvas');
+    const gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
+    if(gl){
+      const debugInfo=gl.getExtension('WEBGL_debug_renderer_info');
+      if(debugInfo){
+        state.platform.webglRenderer=gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+      }
+    }
+  }catch(e){}
+
+  // UI els
+  const els={
+    startBtn:document.getElementById('startBtn'),
+    stopBtn:document.getElementById('stopBtn'),
+    status:document.getElementById('status'),
+    progress:document.getElementById('progress'),
+    mouseEntropy:document.getElementById('mouseEntropy'),
+    keyVar:document.getElementById('keyVar'),
+    pfScore:document.getElementById('pfScore'),
+    pasteRatio:document.getElementById('pasteRatio'),
+    idleGaps:document.getElementById('idleGaps'),
+    targetSec:document.getElementById('targetSec'),
+    holdBtn:document.getElementById('holdBtn'),
+    holdResult:document.getElementById('holdResult'),
+    demoForm:document.getElementById('demoForm'),
+    finalBar:document.getElementById('finalBar'),
+    finalText:document.getElementById('finalText'),
+    calcBtn:document.getElementById('calcBtn'),
+    resetBtn:document.getElementById('resetBtn'),
+    exportBtn:document.getElementById('exportBtn'),
+  };
+
+  function setStatus(s){els.status.textContent='status: '+s}
+  function setProgress(pct){els.progress.style.width=pct+'%'}
+
+  // Tracking handlers
+  function onMove(e){
+    if(!state.tracking) return;
+    const now=performance.now();
+    const cur={x:e.clientX,y:e.clientY,t:now};
+    if(state.mouse.last){
+      const d=dist(state.mouse.last,cur);
+      const dt=(now-state.mouse.lastTs)||1;
+      const sp=d/(dt);
+      state.mouse.totalDist+=d;
+      state.mouse.speeds.push(sp);
+      const ang=angle(state.mouse.last,cur);
+      if(state.mouse.angles.length){
+        const prev=state.mouse.angles[state.mouse.angles.length-1];
+        const delta=Math.abs(ang-prev);
+        if(d<1.2) state.mouse.tinyJitters++;
+        if(delta>0.7){} // implicit direction change signal via angle variance
+      }
+      state.mouse.angles.push(ang);
+      if(state.mouse.lastTs){
+        const gap=now-state.mouse.lastTs;
+        if(gap>600) state.mouse.idleGaps.push(gap);
+      }
+    }
+    state.mouse.moves++;
+    state.mouse.last=cur;
+    state.mouse.lastTs=now;
+    updateLiveStats();
+  }
+
+  function onKey(e){
+    if(!state.tracking) return;
+    const now=performance.now();
+    if(state.keys.last){ state.keys.times.push(now-state.keys.last); }
+    state.keys.last=now;
+    state.keys.total++;
+    updateLiveStats();
+  }
+
+  function onPaste(e){
+    if(!state.tracking) return;
+    state.keys.pasted++;
+    updateLiveStats();
+  }
+
+  // Micro-challenge: press & hold target seconds
+  function newHoldTarget(){
+    // Random between 1.8 and 3.5 seconds with a decimal
+    const t=(Math.random()*(3.5-1.8)+1.8);
+    state.hold.target=+t.toFixed(1);
+    els.targetSec.textContent=state.hold.target.toFixed(1);
+  }
+  newHoldTarget();
+
+  els.holdBtn.addEventListener('pointerdown',()=>{
+    state.hold.downAt=performance.now();
+    els.holdResult.textContent='holding…';
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>{
+    els.holdBtn.addEventListener(ev,()=>{
+      if(!state.hold.downAt) return;
+      const dur=performance.now()-state.hold.downAt;
+      const targetMs=state.hold.target*1000;
+      const err=Math.abs(dur-targetMs);
+      state.hold.errorMs=err;
+      els.holdResult.textContent=`held ${(dur/1000).toFixed(2)}s, error ${err.toFixed(0)}ms`;
+      state.hold.downAt=0;
+      updateLiveStats();
+    })
+  });
+
+  // Form events
+  els.demoForm.addEventListener('submit',e=>{
+    e.preventDefault();
+    const hp=document.getElementById('hp_');
+    state.form.honeypot=!!hp.value;
+    const typed=state.keys.total;
+    const pasted=state.keys.pasted;
+    state.form.pasteRatio=typed? pasted/typed : (pasted?1:0);
+    updateLiveStats();
+  });
+
+  function start(){
+    if(state.tracking) return;
+    state.tracking=true; state.startedAt=performance.now();
+    setStatus('tracking');
+    setProgress(12);
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('keydown',onKey);
+    window.addEventListener('paste',onPaste);
+  }
+  function stop(){
+    if(!state.tracking) return;
+    state.tracking=false; setStatus('stopped');
+    window.removeEventListener('mousemove',onMove);
+    window.removeEventListener('keydown',onKey);
+    window.removeEventListener('paste',onPaste);
+  }
+
+  els.startBtn.onclick=start;
+  els.stopBtn.onclick=stop;
+
+  function updateLiveStats(){
+    // Mouse entropy proxy = normalized variance of angles + speed variance + jitters
+    const aVar=variance(state.mouse.angles);
+    const sVar=variance(state.mouse.speeds);
+    const entropyScore=clamp((aVar*1.2 + sVar*800 + Math.log1p(state.mouse.tinyJitters))/5,0,1);
+    els.mouseEntropy.textContent=(entropyScore*100|0);
+
+    // Keystroke variance (humans are irregular)
+    const kv=variance(state.keys.times);
+    const keyScore=clamp(Math.log10(1+kv)/1.3,0,1);
+    els.keyVar.textContent=(keyScore*100|0);
+
+    // Paste ratio & idle gaps
+    els.pasteRatio.textContent=((state.form.pasteRatio*100)||0).toFixed(0)+'%';
+    els.idleGaps.textContent=state.mouse.idleGaps.length;
+
+    // Platform flags score (1 is human‑leaning)
+    let pf=1.0;
+    if(state.platform.webdriver) pf-=0.5;
+    if(state.platform.plugins===0) pf-=0.2;
+    if((state.platform.webglRenderer||'').toLowerCase().includes('swiftshader')) pf-=0.2;
+    els.pfScore.textContent=(clamp(pf,0,1)*100|0);
+
+    // Progress bar based on events gathered
+    const richness=clamp((state.mouse.moves>50?0.3:state.mouse.moves/200) + (state.keys.times.length>10?0.3:state.keys.times.length/40) + (state.hold.errorMs!==null?0.4:0),0,1);
+    setProgress(Math.round(richness*100));
+  }
+
+  function decide(){
+    // Build feature scores 0..1 (higher => more human‑like)
+    const aVar=variance(state.mouse.angles);
+    const sVar=variance(state.mouse.speeds);
+    const mouseEntropy=clamp((aVar*1.2 + sVar*800 + Math.log1p(state.mouse.tinyJitters))/5,0,1);
+
+    const keyVar=variance(state.keys.times);
+    const keyScore=clamp(Math.log10(1+keyVar)/1.3,0,1);
+
+    const pf=(()=>{let p=1.0; if(state.platform.webdriver) p-=0.5; if(state.platform.plugins===0) p-=0.2; if((state.platform.webglRenderer||'').toLowerCase().includes('swiftshader')) p-=0.2; return clamp(p,0,1)})();
+
+    const hold=(()=>{ if(state.hold.errorMs==null) return 0.3; const e=state.hold.errorMs; // humans rarely stop at exact ms
+      if(e>1200) return 0.2; if(e>600) return 0.45; if(e>300) return 0.7; if(e>120) return 0.85; return 0.6; })();
+
+    const pastePenalty= state.form.pasteRatio>0.5 ? 0.25 : (state.form.pasteRatio>0.2 ? 0.6 : 1.0);
+    const idleBonus = clamp(Math.log1p(state.mouse.idleGaps.length)/2,0,0.2);
+    const honey = state.form.honeypot ? -0.6 : 0;
+
+    // Weighted blend
+    let humanLikelihood = (
+      mouseEntropy*0.28 +
+      keyScore*0.22 +
+      pf*0.18 +
+      hold*0.22 +
+      idleBonus +
+      honey
+    ) * pastePenalty;
+
+    humanLikelihood = clamp(humanLikelihood,0,1);
+
+    const pct=Math.round(humanLikelihood*100);
+    els.finalBar.style.width=pct+'%';
+    els.finalBar.style.background = pct<40? 'linear-gradient(90deg,#ef4444,#f43f5e)' : pct<70? 'linear-gradient(90deg,#f59e0b,#fbbf24)' : 'linear-gradient(90deg,#34d399,#10b981)';
+    els.finalText.innerHTML = pct<40
+      ? `<span class="danger">Likely bot (${pct}%)</span> — Confidence low; require extra verification.`
+      : pct<70
+        ? `<span class="warn">Uncertain (${pct}%)</span> — Consider a follow‑up challenge (e.g., image click or email OTP).`
+        : `<span class="ok">Likely human (${pct}%)</span> — Pass.`;
+
+    return pct;
+  }
+
+  els.calcBtn.onclick=decide;
+  els.resetBtn.onclick=()=>{window.location.reload()};
+  els.exportBtn.onclick=()=>{
+    const payload={
+      collectedAt:new Date().toISOString(),
+      state:{
+        mouse:{moves:state.mouse.moves,totalDist:state.mouse.totalDist,angleVar:variance(state.mouse.angles),speedVar:variance(state.mouse.speeds),tinyJitters:state.mouse.tinyJitters,idleGaps:state.mouse.idleGaps},
+        keys:{intervals:state.keys.times.slice(0,50),variance:variance(state.keys.times),total:state.keys.total,pasted:state.keys.pasted},
+        hold:{target:state.hold.target,errorMs:state.hold.errorMs},
+        form:{honeypot:state.form.honeypot,pasteRatio:state.form.pasteRatio},
+        platform:state.platform,
+      },
+      decision: {humanPct: (document.getElementById('finalBar').style.width||'0').replace('%','')}
+    };
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='evidence.json'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+
+  // Kick off passive tracking by default to save a click
+  start();
+})();
+</script>
+</body>
+</html>
+
+
+Done. I dropped a single-file “Human vs Robot Detector” app into the canvas—ready to deploy in ~5 minutes.
+
+How to put it live for free:
+
+1. GitHub Pages (purely static, 2–3 mins)
+
+
+
+Create a new repo named anything.
+
+Add the file as index.html (copy from the canvas).
+
+Repo → Settings → Pages → “Deploy from a branch” → main / root → Save.
+
+Open the Pages URL it shows.
+
+
+2. Netlify (drag-and-drop)
+
+
+
+Go to Netlify → “Add new site” → “Deploy manually” → drag the index.html file.
+
+It’ll give you a live URL instantly.
+
+
+3. Vercel (CLI or import)
+
+
+
+“Add New Project” → Import from Git → Framework = “Other”.
+
+Root contains index.html → Deploy.
+
+
+What it does (no backend needed):
+
+Tracks mouse movement entropy, speed variance, direction changes.
+
+Measures keystroke rhythm variance.
+
+Detects paste-heavy input and a hidden honeypot field.
+
+Micro-challenge: press-and-hold for a random time; evaluates human timing imprecision.
+
+Checks basic bot flags (navigator.webdriver, plugins, WebGL renderer like “SwiftShader”).
+
+Produces a “Likely human/bot” score and lets you export the evidence JSON.
+
+
+Notes/limits:
+
+This is a lightweight, client-only heuristic—great for forms/links but not ironclad.
+
+For strong protection later, pair it with Cloudflare Turnstile or hCaptcha + a server-side token verify.
+
+
+If you want, I can also add a one-click deploy button for Netlify/Vercel or embed this as a drop-in widget for your site.
